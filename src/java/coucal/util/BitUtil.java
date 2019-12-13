@@ -16,10 +16,7 @@ public final class BitUtil {
                 | (num & 0x0FE00000) << 3;
     }
 
-    public static int unsynchsafe(int num) {
-        return    (num & 0x0000007F)
-                | (num & 0x00007F00) >> 1
-                | (num & 0x007F0000) >> 2
-                | (num & 0x7F000000) >> 3;
+    public static int unsynchsafe(int[] num) {
+        return num[0] << 21 | num[1] << 14 | num[2] <<  7 | num[3];
     }
 }

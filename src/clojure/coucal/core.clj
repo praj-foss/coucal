@@ -34,8 +34,12 @@
 
 (defn- read-size
   [stream-map]
-  ;; TODO: Implement this
-  stream-map)
+  (assoc-in stream-map [:result :size]
+            (->> #(.read (:stream stream-map))
+                 (repeatedly 4)
+                 (map int)
+                 (int-array)
+                 (BitUtil/unsynchsafe))))
 
 (defn read-tags
   [path]
