@@ -4,8 +4,7 @@
   :license      {:name "MIT License"
                  :url "http://opensource.org/licenses/MIT"}
 
-  :dependencies [[org.clojure/clojure  "1.8.0"]
-                 [smee/binary          "0.5.4"]]
+  :dependencies [[org.clojure/clojure  "1.8.0"]]
 
   :source-paths      ["src/clojure"]
   :java-source-paths ["src/java"]
