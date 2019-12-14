@@ -1,53 +1,72 @@
 (ns coucal.core
   (:require [clojure.java.io :as io])
-  (:import  [coucal.util BitUtil]))
+  (:import  (coucal.util ReadUtil)
+            (java.io InputStream)))
 
-(defn- read-id3
-  [stream-map]
-  (let [head  (->> #(.read (:stream stream-map))
-                   (repeatedly 3)
-                   (map char)
-                   (apply str))]
-    (if (= head "ID3")
-      stream-map
-      (throw (ex-info "Invalid ID3v2 header"
-                      {:starts-with head})))))
+;; Aliases
+(defn- read-unsigned-int  [stream] (ReadUtil/unsignedInt stream))
+(defn- read-synchsafe-int [stream] (ReadUtil/synchsafeInt stream))
+(defn- read-str [stream size] (ReadUtil/string stream size))
 
 (defn- read-version
-  [stream-map]
-  (let [major     (.read (:stream stream-map))
-        revision  (.read (:stream stream-map))]
-    (if (and (< major  0xFF) (< revision 0xFF))
-      (assoc-in stream-map [:result :version]
-                (str "2." major "." revision))
-      (throw (ex-info "Invalid ID3v2 version"
-                      {:major major :revision revision})))))
+  [stream]
+  {:major (.read stream)
+   :minor (.read stream)})
 
 (defn- read-flags
-  [stream-map]
-  (let [flags     (.read (:stream stream-map))
-        test-bit  #(bit-test flags %)]
-    (assoc-in stream-map [:result :flags]
-              {:unsynchronised  (test-bit 7)
-               :extended-header (test-bit 6)
-               :experimental    (test-bit 5)})))
+  [stream]
+  (let [flag-byte (.read stream)]
+    (cond-> #{}
+            (bit-test flag-byte 5) (conj :experimental?)
+            (bit-test flag-byte 6) (conj :extended?)
+            (bit-test flag-byte 7) (conj :unsynchronised?))))
 
-(defn- read-size
-  [stream-map]
-  (assoc-in stream-map [:result :size]
-            (->> #(.read (:stream stream-map))
-                 (repeatedly 4)
-                 (map int)
-                 (int-array)
-                 (BitUtil/unsynchsafe))))
+(defn- read-extra-flags
+  [stream]
+  (let [flag-byte (.read stream)
+        _         (.read stream)]                           ;; TODO: Make use
+    (cond-> []
+            (bit-test flag-byte 7) (conj :crc?))))
 
-(defn read-tags
+(defn- extend-header
+  [header stream]
+  (if (:extended? (:flags header))
+    (-> header
+        (update :remaining -
+                (+ 4 (read-unsigned-int stream)))           ;; Cut extended header size
+        (update :flags into (read-extra-flags stream))
+        (update :remaining + (read-unsigned-int stream))    ;; Add padding size
+        (conj (if (:crc? (:flags header))
+                {:crc (read-unsigned-int stream)})))
+    header))
+
+(defn- read-header
+  [^InputStream stream]
+  (if (= "ID3" (read-str stream 3))
+    (-> {}
+        (assoc :version (read-version stream))
+        (assoc :flags (read-flags stream))
+        (assoc :remaining (read-synchsafe-int stream))
+        (extend-header stream))
+    (throw (ex-info "Invalid ID3v2 tag"
+                    {:cause "Magic number not found"}))))
+
+(defn- read-frames
+  [tag stream]
+  (if-not (> (:remaining tag) 0)
+    tag
+    (let [id   (read-str stream 4)
+          size (read-unsigned-int stream)
+          _    (.skip stream (+ 2 size))]
+      (-> tag
+          (update :frames conj id)
+          (update :remaining - (+ 10 size))
+          (recur stream)))))
+
+(defn read-tag
   [path]
   (with-open [stream (io/input-stream path)]
-    (-> {:stream stream :result {}}
-        (read-id3)
-        (read-version)
-        (read-flags)
-        (read-size)
-        (:result))))
-
+    (-> (read-header stream)
+        (assoc :frames [])
+        (read-frames stream)
+        (dissoc :remaining))))
