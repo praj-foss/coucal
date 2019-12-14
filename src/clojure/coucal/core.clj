@@ -1,53 +1,43 @@
 (ns coucal.core
   (:require [clojure.java.io :as io])
-  (:import  [coucal.util BitUtil]))
-
-(defn- read-id3
-  [stream-map]
-  (let [head  (->> #(.read (:stream stream-map))
-                   (repeatedly 3)
-                   (map char)
-                   (apply str))]
-    (if (= head "ID3")
-      stream-map
-      (throw (ex-info "Invalid ID3v2 header"
-                      {:starts-with head})))))
+  (:import  (coucal.util BitUtil)
+            (java.io InputStream)))
 
 (defn- read-version
-  [stream-map]
-  (let [major     (.read (:stream stream-map))
-        revision  (.read (:stream stream-map))]
-    (if (and (< major  0xFF) (< revision 0xFF))
-      (assoc-in stream-map [:result :version]
-                (str "2." major "." revision))
-      (throw (ex-info "Invalid ID3v2 version"
-                      {:major major :revision revision})))))
+  [stream]
+  {:major (.read stream)
+   :minor (.read stream)})
 
 (defn- read-flags
-  [stream-map]
-  (let [flags     (.read (:stream stream-map))
-        test-bit  #(bit-test flags %)]
-    (assoc-in stream-map [:result :flags]
-              {:unsynchronised  (test-bit 7)
-               :extended-header (test-bit 6)
-               :experimental    (test-bit 5)})))
+  [stream]
+  (let [flags    (.read stream)
+        when-bit #(bit-test flags %)]
+    (cond-> #{}
+            (when-bit 5) (conj :experimental?)
+            (when-bit 6) (conj :extended?)
+            (when-bit 7) (conj :unsynchronised?))))
 
 (defn- read-size
-  [stream-map]
-  (assoc-in stream-map [:result :size]
-            (->> #(.read (:stream stream-map))
-                 (repeatedly 4)
-                 (map int)
-                 (int-array)
-                 (BitUtil/unsynchsafe))))
+  [stream]
+  (->> #(.read stream)
+       (repeatedly 4)
+       (map int)
+       (int-array)
+       (BitUtil/unsynchsafe)))
 
-(defn read-tags
+(defn- read-header
+  [^InputStream stream]
+  (if-not (->> #(.read stream)
+               (repeatedly 3)
+               (map char)
+               (= [\I \D \3]))
+    (throw (ex-info "Invalid ID3v2 tag" {:cause "Magic number not found"}))
+    (-> {}
+        (assoc :version (read-version stream))
+        (assoc :flags (read-flags stream))
+        (assoc :size (read-size stream)))))
+
+(defn read-tag
   [path]
   (with-open [stream (io/input-stream path)]
-    (-> {:stream stream :result {}}
-        (read-id3)
-        (read-version)
-        (read-flags)
-        (read-size)
-        (:result))))
-
+    (read-header stream)))
