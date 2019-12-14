@@ -1,7 +1,11 @@
 (ns coucal.core
   (:require [clojure.java.io :as io])
-  (:import  (coucal.util BitUtil)
+  (:import  (coucal.util ReadUtil)
             (java.io InputStream)))
+
+;; Aliases
+(defn- read-unsigned-int  [stream] (ReadUtil/unsignedInt stream))
+(defn- read-synchsafe-int [stream] (ReadUtil/synchsafeInt stream))
 
 (defn- read-version
   [stream]
@@ -17,13 +21,23 @@
             (when-bit 6) (conj :extended?)
             (when-bit 7) (conj :unsynchronised?))))
 
-(defn- read-size
+(defn- read-extra-flags
   [stream]
-  (->> #(.read stream)
-       (repeatedly 4)
-       (map int)
-       (int-array)
-       (BitUtil/unsynchsafe)))
+  (let [flags-1  (.read stream)
+        _        (.read stream)                             ;; TODO: Make use
+        when-bit #(bit-test %1 %2)]
+    (cond-> #{}
+            (when-bit flags-1 7) (conj :crc?))))
+
+(defn- read-extended
+  [stream]
+  (as-> {} extended
+        (assoc extended :size (read-unsigned-int stream))
+        (assoc extended :flags (read-extra-flags stream))
+        (assoc extended :padding (read-unsigned-int stream))
+        (conj extended
+              (if (:crc? (:flags extended))
+                {:crc (read-unsigned-int stream)}))))
 
 (defn- read-header
   [^InputStream stream]
@@ -31,11 +45,16 @@
                (repeatedly 3)
                (map char)
                (= [\I \D \3]))
-    (throw (ex-info "Invalid ID3v2 tag" {:cause "Magic number not found"}))
-    (-> {}
-        (assoc :version (read-version stream))
-        (assoc :flags (read-flags stream))
-        (assoc :size (read-size stream)))))
+    (throw (ex-info "Invalid ID3v2 tag"
+                    {:cause "Magic number not found"}))
+    (as-> {} header
+          (assoc header :version (read-version stream))
+          (assoc header :flags (read-flags stream))
+          (assoc header :size (read-synchsafe-int stream))
+          (conj header
+                (if (:extended? (:flags header))
+                  (select-keys (read-extended stream)
+                               [:padding :crc]))))))
 
 (defn read-tag
   [path]
