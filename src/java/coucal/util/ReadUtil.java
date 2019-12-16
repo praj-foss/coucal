@@ -29,7 +29,14 @@ public final class ReadUtil {
         return new String(readBytes(stream, size), StandardCharsets.ISO_8859_1);
     }
 
-    private static byte[] readBytes(final InputStream stream, final int size) throws IOException{
+    public static String frameId(final InputStream stream) throws IOException {
+        final byte[] bytes = new byte[4];
+        return (stream.read(bytes) != -1 && bytes[0] != 0)
+                ? new String(bytes, StandardCharsets.ISO_8859_1)
+                : null;
+    }
+
+    private static byte[] readBytes(final InputStream stream, final int size) throws IOException {
         final byte[] bytes = new byte[size];
         stream.read(bytes);
         return bytes;
