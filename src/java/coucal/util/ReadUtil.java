@@ -2,6 +2,7 @@ package coucal.util;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import static java.lang.Byte.toUnsignedLong;
 
@@ -25,13 +26,36 @@ public final class ReadUtil {
                 | toUnsignedLong(bytes[3]);
     }
 
-    public static String string(final InputStream stream, final int size) throws IOException {
-        return new String(readBytes(stream, size), StandardCharsets.ISO_8859_1);
+    public static String text(final InputStream stream, final int size) throws IOException {
+        final byte[] bytes = new byte[size];
+        if (stream.read(bytes) != -1) {
+            if (bytes[0] <= 3)
+                return new String(bytes, 1, bytes.length - 1, getEncoding(bytes[0]));
+            else
+                return new String(bytes, StandardCharsets.ISO_8859_1);
+        }
+        return null;
     }
 
-    private static byte[] readBytes(final InputStream stream, final int size) throws IOException{
+    public static String frameId(final InputStream stream) throws IOException {
+        final byte[] bytes = new byte[4];
+        return (stream.read(bytes) != -1 && bytes[0] != 0)
+                ? new String(bytes, StandardCharsets.ISO_8859_1)
+                : null;
+    }
+
+    private static byte[] readBytes(final InputStream stream, final int size) throws IOException {
         final byte[] bytes = new byte[size];
         stream.read(bytes);
         return bytes;
+    }
+
+    private static Charset getEncoding(final byte key) {
+        switch (key) {
+            case 0x01: return StandardCharsets.UTF_16;
+            case 0x02: return StandardCharsets.UTF_16BE;
+            case 0x03: return StandardCharsets.UTF_8;
+            default:   return StandardCharsets.ISO_8859_1;
+        }
     }
 }
