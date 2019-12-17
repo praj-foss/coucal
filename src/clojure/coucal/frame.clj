@@ -1,59 +1,68 @@
 (ns coucal.frame
-  (:import (coucal.util ReadUtil)
-           (java.io InputStream)))
+  (:require [clojure.string :as st])
+  (:import  (coucal.util ReadUtil)
+            (java.io InputStream)))
 
 ;; Frame id
 (defn read-id [stream]
   (ReadUtil/frameId stream))
 
-;; Album title
-(defn- read-album [stream size]
-  {:album (ReadUtil/text stream size)})
+(defn- split-slash [^String text]
+  (st/split text #"/"))
 
-;; Beats per minute
-(defn- read-bpm [stream size]
-  {:bpm (Integer/parseInt (ReadUtil/text stream size))})
+(defn- parse-int [^String text]
+  (Integer/parseInt text))
 
-;; Composers
-(defn- read-composers [stream size]
-  {:composers (ReadUtil/text stream size)})
-
-;; Genre
-(defn- read-genre [stream size]
-  {:genre (ReadUtil/text stream size)})
-
-;; Copyright message
-(defn- read-copyright [stream size]
-  {:copyright (ReadUtil/text stream size)})
-
-;; Song title
-(defn- read-title [stream size]
-  {:title (ReadUtil/text stream size)})
-
-;; Track number
-(defn- read-track-num [stream size]
-  {:track-num (ReadUtil/text stream size)})
-
-;; Year of recording
-(defn- read-year [stream size]
-  {:year (Integer/parseInt (ReadUtil/text stream size))})
-
-;; Content readers for supported frames
-(def ^:private readers
-  {"TALB" read-album
-   "TBPM" read-bpm
-   "TCOM" read-composers
-   "TCON" read-genre
-   "TCOP" read-copyright
-   "TIT2" read-title
-   "TRCK" read-track-num
-   "TYER" read-year})
-
-;; Skip by given bytes
 (defn- skip [stream bytes]
   (ReadUtil/skip stream bytes))
+
+;; Supported text frames
+;; Maps frame id to a keyword and formatter
+(def ^:private text-frames
+  {"TALB" [:album]
+   "TBPM" [:bpm parse-int]
+   "TCOM" [:composers split-slash]
+   "TCON" [:genre]
+   "TCOP" [:copyright]
+   "TDAT" [:date]
+   "TDLY" [:delay parse-int]
+   "TENC" [:encoded-by]
+   "TEXT" [:lyricists split-slash]
+   "TFLT" [:file-type]
+   "TIME" [:time]
+   "TIT1" [:group]
+   "TIT2" [:title]
+   "TIT3" [:subtitle]
+   "TKEY" [:initial-key]
+   "TLAN" [:languages]
+   "TLEN" [:length parse-int]
+   "TMED" [:media-type]
+   "TOAL" [:original-album]
+   "TOFN" [:original-filename]
+   "TOLY" [:original-lyricists split-slash]
+   "TOPE" [:original-artists split-slash]
+   "TORY" [:original-year parse-int]
+   "TOWN" [:owner]
+   "TPE1" [:artists split-slash]
+   "TPE2" [:side-artists split-slash]
+   "TPE3" [:conductor]
+   "TPE4" [:modified-by]
+   "TPOS" [:part-num]
+   "TPUB" [:publisher]
+   "TRCK" [:track-num]
+   "TRDA" [:recording-dates]
+   "TRSN" [:radio-station]
+   "TRSO" [:radio-owner]
+   "TSIZ" [:audio-size parse-int]
+   "TSRC" [:isrc]
+   "TSEE" [:settings]
+   "TYER" [:year parse-int]})
 
 ;; Read supported content, skip otherwise
 (defn read-or-skip
   [^InputStream stream ^String id size]
-  ((get readers id skip) stream size))
+  (condp contains? id
+    text-frames (let [[name format] (get text-frames id)]
+                  {name ((or format identity)
+                         (ReadUtil/text stream size))})
+    (skip stream size)))
