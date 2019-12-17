@@ -44,6 +44,12 @@ public final class ReadUtil {
                 : null;
     }
 
+    public static void skip(final InputStream stream, final long bytes) throws IOException {
+        long left = bytes;
+        while (left > 0)
+            left -= stream.skip(left);
+    }
+
     private static byte[] readBytes(final InputStream stream, final int size) throws IOException {
         final byte[] bytes = new byte[size];
         stream.read(bytes);
