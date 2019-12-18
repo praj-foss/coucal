@@ -16,9 +16,9 @@
 (defn- skip [stream bytes]
   (ReadUtil/skip stream bytes))
 
-;; Supported text frames
-;; Maps frame id to a keyword and formatter
-(def ^:private text-frames
+;; Supported string frames
+;; Maps frame id to a keyword and a string adapter
+(def ^:private string-frames
   {"TALB" [:album]
    "TBPM" [:bpm parse-int]
    "TCOM" [:composers split-slash]
@@ -44,7 +44,7 @@
    "TORY" [:original-year parse-int]
    "TOWN" [:owner]
    "TPE1" [:artists split-slash]
-   "TPE2" [:side-artists split-slash]
+   "TPE2" [:band]
    "TPE3" [:conductor]
    "TPE4" [:modified-by]
    "TPOS" [:part-num]
@@ -60,9 +60,16 @@
 
 ;; Read supported content, skip otherwise
 (defn read-or-skip
-  [^InputStream stream ^String id size]
+  [^InputStream stream id size adapters]
   (condp contains? id
-    text-frames (let [[name format] (get text-frames id)]
-                  {name ((or format identity)
-                         (ReadUtil/text stream size))})
+    string-frames
+      (let [[fr default] (get string-frames id)
+            content      (ReadUtil/text stream size)]
+        {fr (try
+              ((or (fr adapters) (:rest adapters) default identity)
+               content)
+              (catch Exception _
+                (throw (ex-info
+                         (str "Failed to adapt content of " id)
+                         {:frame fr :content content}))))})
     (skip stream size)))

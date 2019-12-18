@@ -50,7 +50,7 @@
     parse-map))
 
 (defn- read-frames
-  [parse-map]
+  [parse-map adapters]
   (let [stream (:stream parse-map)
         id     (frame/read-id stream)]
     (if (or (<= (:remaining parse-map) 0)
@@ -60,15 +60,17 @@
             _    (.skip stream 2)]                          ;; TODO: Make use
         (-> parse-map
             (update :frames conj
-                    (frame/read-or-skip stream id size))
+                    (frame/read-or-skip stream id size adapters))
             (update :remaining - (+ size 10))
-            (recur))))))
+            (recur adapters))))))
 
 (defn read-tag
-  [path]
-  (with-open [^InputStream stream (io/input-stream path)]
-    (-> {:stream stream :frames {}}
-        (read-header)
-        (read-extended-header)
-        (read-frames)
-        (dissoc :stream :remaining))))
+  ([path]
+   (read-tag path nil))
+  ([path adapters]
+   (with-open [^InputStream stream (io/input-stream path)]
+     (-> {:stream stream :frames {}}
+         (read-header)
+         (read-extended-header)
+         (read-frames adapters)
+         (select-keys [:version :frames])))))
