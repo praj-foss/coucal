@@ -1,68 +1,75 @@
 (ns coucal.frame
-  (:require [clojure.string :as st])
-  (:import  (coucal.util ReadUtil)
-            (java.io InputStream)))
+  (:require [coucal.data :as d]
+            [clojure.string :as s])
+  (:import  (java.io InputStream)))
 
-;; Frame id
-(defn read-id [stream]
-  (ReadUtil/frameId stream))
+(def ^:private slashed
+  (comp #(s/split % #"/") d/text))
 
-(defn- split-slash [^String text]
-  (st/split text #"/"))
+;; Maps supported frame ids to keywords and content readers
+(def ^:private frames
+  ;; Texts
+  {"TALB" [:album d/text]
+   "TBPM" [:bpm d/num-string]
+   "TCOM" [:composers slashed]
+   "TCON" [:genre d/text]
+   "TCOP" [:copyright d/text]
+   "TDAT" [:date d/text]
+   "TDLY" [:delay d/num-string]
+   "TENC" [:encoded-by d/text]
+   "TEXT" [:lyricists slashed]
+   "TFLT" [:file-type d/text]
+   "TIME" [:time d/text]
+   "TIT1" [:group d/text]
+   "TIT2" [:title d/text]
+   "TIT3" [:subtitle d/text]
+   "TKEY" [:initial-key d/text]
+   "TLAN" [:languages d/text]
+   "TLEN" [:length d/num-string]
+   "TMED" [:media-type d/text]
+   "TOAL" [:original-album d/text]
+   "TOFN" [:original-filename d/text]
+   "TOLY" [:original-lyricists slashed]
+   "TOPE" [:original-artists slashed]
+   "TORY" [:original-year d/num-string]
+   "TOWN" [:owner d/text]
+   "TPE1" [:artists slashed]
+   "TPE2" [:band d/text]
+   "TPE3" [:conductor d/text]
+   "TPE4" [:modified-by d/text]
+   "TPOS" [:part-num d/text]
+   "TPUB" [:publisher d/text]
+   "TRCK" [:track-num d/text]
+   "TRDA" [:recording-dates d/text]
+   "TRSN" [:radio-station d/text]
+   "TRSO" [:radio-owner d/text]
+   "TSIZ" [:audio-size d/num-string]
+   "TSRC" [:isrc d/text]
+   "TSEE" [:settings d/text]
+   "TYER" [:year d/num-string]
 
-(defn- parse-int [^String text]
-  (Integer/parseInt text))
-
-(defn- skip [stream bytes]
-  (ReadUtil/skip stream bytes))
-
-;; Supported text frames
-;; Maps frame id to a keyword and formatter
-(def ^:private text-frames
-  {"TALB" [:album]
-   "TBPM" [:bpm parse-int]
-   "TCOM" [:composers split-slash]
-   "TCON" [:genre]
-   "TCOP" [:copyright]
-   "TDAT" [:date]
-   "TDLY" [:delay parse-int]
-   "TENC" [:encoded-by]
-   "TEXT" [:lyricists split-slash]
-   "TFLT" [:file-type]
-   "TIME" [:time]
-   "TIT1" [:group]
-   "TIT2" [:title]
-   "TIT3" [:subtitle]
-   "TKEY" [:initial-key]
-   "TLAN" [:languages]
-   "TLEN" [:length parse-int]
-   "TMED" [:media-type]
-   "TOAL" [:original-album]
-   "TOFN" [:original-filename]
-   "TOLY" [:original-lyricists split-slash]
-   "TOPE" [:original-artists split-slash]
-   "TORY" [:original-year parse-int]
-   "TOWN" [:owner]
-   "TPE1" [:artists split-slash]
-   "TPE2" [:side-artists split-slash]
-   "TPE3" [:conductor]
-   "TPE4" [:modified-by]
-   "TPOS" [:part-num]
-   "TPUB" [:publisher]
-   "TRCK" [:track-num]
-   "TRDA" [:recording-dates]
-   "TRSN" [:radio-station]
-   "TRSO" [:radio-owner]
-   "TSIZ" [:audio-size parse-int]
-   "TSRC" [:isrc]
-   "TSEE" [:settings]
-   "TYER" [:year parse-int]})
+   ;; URL links
+   "WCOM" [:url-commercial d/text]
+   "WCOP" [:url-copyright d/text]
+   "WOAF" [:url-audio d/text]
+   "WOAR" [:url-artist d/text]
+   "WOAS" [:url-source d/text]
+   "WORS" [:url-radio d/text]
+   "WPAY" [:url-payment d/text]
+   "WPUB" [:url-publisher d/text]})
 
 ;; Read supported content, skip otherwise
 (defn read-or-skip
-  [^InputStream stream ^String id size]
-  (condp contains? id
-    text-frames (let [[name format] (get text-frames id)]
-                  {name ((or format identity)
-                         (ReadUtil/text stream size))})
-    (skip stream size)))
+  [^InputStream stream id size contents]
+  (if (contains? frames id)
+    (let [[frame default] (get frames id)
+          content         (or (frame contents)
+                              (:rest contents)
+                              default)]
+      (try
+        {frame (content stream size)}
+        (catch Exception _
+          (throw (ex-info
+                   "Failed to read frame content"
+                   {:id id :frame frame})))))
+    (d/skip stream size)))
